@@ -16,11 +16,11 @@ logger = configure(log_dir, ["stdout", "tensorboard"])
 
 # Set up evaluation callback
 eval_env = CrowdAvoidanceEnv()
-eval_callback = EvalCallback(eval_env, best_model_save_path="./logs/",
+eval_callback = EvalCallback(eval_env, best_model_save_path="./sac_models/",
                              log_path="./logs/", eval_freq=5000)
 
 # ? Define SAC model with proper parameters
-model = SAC(
+'''model = SAC(
     "MlpPolicy",
     env,
     learning_rate=1e-4,       # Learning rate (default: 3e-4)
@@ -33,19 +33,19 @@ model = SAC(
     policy_kwargs={"net_arch": [512, 512]},  # Neural network architecture
     verbose=1,                # Logging level (1 = info, 0 = silent)
     tensorboard_log="./sac_logs/"
-)
+)'''
 
-#model = SAC.load("sac_crowd_avoidance_align_50k", env=env)
+model = SAC.load("src/pybullet_sim/pybullet_sim/sac_models/sac_crowd_avoidance_1_50k", env=env)
 # ? Attach logger to model
 model.set_logger(logger)
 
 print("Model Created. Training begins...")
 
 # ? Train model with proper logging
-TIMESTEPS = 150000
+TIMESTEPS = 50000
 
 model.learn(total_timesteps=TIMESTEPS, callback=eval_callback, progress_bar=True, reset_num_timesteps=False)
 
 # ? Save final trained model
-model.save("sac_crowd_avoidance_align_150k")
+model.save("sac_crowd_avoidance_1_100k")
 print("Training Complete! Model Saved.")

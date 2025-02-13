@@ -5,7 +5,7 @@ from crowd_gym import CrowdAvoidanceEnv
 import time
 
 # Load trained model
-model = SAC.load("src/pybullet_sim/pybullet_sim/sac_models/sac_crowd_avoidance_align_150k")
+model = SAC.load("src/pybullet_sim/pybullet_sim/sac_models/sac_crowd_avoidance_1_100k")
 
 # Create environment with GUI
 env = CrowdAvoidanceEnv(use_gui=True)
@@ -14,7 +14,7 @@ env = CrowdAvoidanceEnv(use_gui=True)
 obs, _ = env.reset()
 
 # ? Run for 1000 steps (or until the episode ends)
-for _ in range(1000):
+for _ in range(3000):
     env.render()  # Ensure PyBullet GUI is active
     action, _ = model.predict(obs)  # Get action from trained model
     obs, reward, done, _, _ = env.step(action)

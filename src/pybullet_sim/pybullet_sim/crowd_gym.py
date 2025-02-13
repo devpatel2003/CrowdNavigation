@@ -70,7 +70,7 @@ class CrowdAvoidanceEnv(gym.Env):
         self.robot = p.loadURDF(urdf_path, basePosition=[0, 0, 0.05], useFixedBase=False)
 
         # Goal Position
-        self.goal_position = [random.uniform(-2, 2), random.uniform(-2, 2)]
+        self.goal_position = [0, 0, 0.05]
 
         # Episode constraints
         self.max_steps = EP_LENGTH  # Max steps per episode
@@ -111,8 +111,8 @@ class CrowdAvoidanceEnv(gym.Env):
 
         # Store goal position
         self.goal_position = [goal_x, goal_y, 0.05]
-        self.goal_marker = p.loadURDF("sphere_small.urdf", basePosition=self.goal_position, globalScaling=0.5)
-
+        self.goal_marker = p.loadURDF("sphere_small.urdf", basePosition=self.goal_position, globalScaling=1)
+        p.changeVisualShape(self.goal_marker, -1, rgbaColor=[0, 1, 0, 1])
 
         # Load robot URDF
         package_path = ament_index_python.packages.get_package_share_directory('yahboomcar_description')
@@ -144,14 +144,13 @@ class CrowdAvoidanceEnv(gym.Env):
 
         # Define robot parameters
         WHEEL_BASE = 0.14  # Distance between left & right wheels, used for left and right control
-        MAX_LINEAR_SPEED = 0.5 # Maximum linear velocity
-        MAX_ANGULAR_SPEED = 1 # Maximum angular velocity
+        MAX_LINEAR_SPEED = 2 # Maximum linear velocity
+        MAX_ANGULAR_SPEED = 10 # Maximum angular velocity
 
         # Scale to max speeds
         linear_speed = action[0] * MAX_LINEAR_SPEED  
         angular_speed = action[1] * MAX_ANGULAR_SPEED  
 
- 
 
 
         '''
@@ -218,35 +217,54 @@ class CrowdAvoidanceEnv(gym.Env):
 
     def _compute_reward(self, action):
         """Calculate the reward function."""
-        '''''
+
         linear_velocity = action[0]
         angular_velocity = action[1]
 
+        dtg_reward = 0
+        htg_reward = 0
+        action_reward = 0
+
+        # Get robot position
         robot_pos, _ = p.getBasePositionAndOrientation(self.robot)
+
+        # Distance to goal reward
         goal_dx = self.goal_position[0] - robot_pos[0]
         goal_dy = self.goal_position[1] - robot_pos[1]
         goal_distance = np.sqrt(goal_dx**2 + goal_dy**2)
 
-        # Reward for getting closer to goal
         previous_distance = getattr(self, "previous_goal_distance", goal_distance)
-        distance_improvement = (previous_distance - goal_distance) * 10  
+        distance_improvement = previous_distance - goal_distance
         self.previous_goal_distance = goal_distance  
 
-        # Penalize jerky movement (acceleration changes)
-        acceleration_penalty = -abs(linear_velocity - self.previous_linear_speed) * 2.0  
-        self.previous_linear_speed = linear_velocity  
+        if distance_improvement > 0:
+            dtg_reward = 1
+        if distance_improvement < 0:
+            dtg_reward = 0
+        
+        # Heading to goal reward
+        goal_angle = self.get_goal_angle()  # Between -pi and pi
+        previous_goal_angle = getattr(self, "previous_goal_angle", goal_angle)
 
-        # Penalize sharp turns (angular velocity changes)
-        turning_penalty = -abs(angular_velocity - self.previous_angular_speed) * 1.5  
-        self.previous_angular_speed = angular_velocity 
+        angle_improvement = (abs(previous_goal_angle) - abs(goal_angle)) * 10.0  # Increase reward for reducing error
+        self.previous_goal_angle = goal_angle  
 
-        # Reward forward movement, discourage excessive rotation
-        velocity_reward = linear_velocity - abs(angular_velocity) * 0.5  
+        if angle_improvement > 0:
+            htg_reward = 1 
+        if angle_improvement < 0:
+            htg_reward = 0
+        
+        # Action reward
+        if linear_velocity >= 0 and (((1.0 / 32.0) * -2.0) <= angular_velocity <= (1.0 / 32.0) * 2.0):
+            # if linear_speed >= 0 and angular_speed == 0:
+            action_reward = 2 #5
+        elif linear_velocity >= 0 and angular_velocity > 0:
+            action_reward = 1 #1
+        elif linear_velocity >= 0 and angular_velocity < 0:
+            action_reward = 1 #1
 
-        # Penalize moving backward
-        backward_penalty = -5.0 if linear_velocity < 0 else 0
 
-        # Collision penalty
+        # ? Collision penalty
         collision_penalty = 0
         contact_points = p.getContactPoints(self.robot)
         if contact_points:
@@ -262,67 +280,9 @@ class CrowdAvoidanceEnv(gym.Env):
             goal_bonus = 100  
             return goal_bonus, True  
 
-        reward = distance_improvement + velocity_reward + collision_penalty + goal_bonus + acceleration_penalty + turning_penalty + backward_penalty
-
-        return reward, False  '''
-
-        linear_velocity = action[0]
-        angular_velocity = action[1]
-
-        # Get robot position
-        robot_pos, _ = p.getBasePositionAndOrientation(self.robot)
-        goal_dx = self.goal_position[0] - robot_pos[0]
-        goal_dy = self.goal_position[1] - robot_pos[1]
-        goal_distance = np.sqrt(goal_dx**2 + goal_dy**2)
-
-        # ? Compute goal angle relative to the robot's heading
-        goal_angle = self.get_goal_angle()  # Between -p and p
-
-        # ? Strongly reward reducing `|goal_angle|`
-        previous_goal_angle = getattr(self, "previous_goal_angle", goal_angle)
-        angle_improvement = (abs(previous_goal_angle) - abs(goal_angle)) * 10.0  # Increase reward for reducing error
-        self.previous_goal_angle = goal_angle  
-
-        # ? Reduce distance-based reward (encourage turning first)
-        previous_distance = getattr(self, "previous_goal_distance", goal_distance)
-        distance_improvement = (previous_distance - goal_distance) * 2.0  
-        self.previous_goal_distance = goal_distance  
-
-        # ? Reward for turning towards the goal
-        turn_reward = 10.0 * (1 - abs(goal_angle) / np.pi)  # High reward if facing goal
-
-        # ? Strong penalty for moving forward while misaligned
-        misalignment_penalty = -10.0 if abs(goal_angle) > 0.2 and linear_velocity > 0.05 else 0
-
-        # ? Remove forward reward unless nearly aligned
-        forward_reward = 5.0 * linear_velocity if abs(goal_angle) < 0.1 else 0
-
-        # ? Penalty for excessive turning when already aligned
-        spinning_penalty = -abs(angular_velocity) * 2.0 if abs(goal_angle) < 0.1 else 0
-
-        # ? Collision penalty
-        collision_penalty = 0
-        contact_points = p.getContactPoints(self.robot)
-        if contact_points:
-            hit_object_id = contact_points[0][2]
-            if hit_object_id != 0 and hit_object_id != getattr(self, "last_collision", None):
-                self.last_collision = hit_object_id  
-                collision_penalty = -10  
-                print(f"Collision detected! Robot hit object {hit_object_id} at {contact_points[0][6:9]}")
-
-        # ? Goal reached bonus
-        goal_bonus = 0
-        if goal_distance < 0.2:  
-            goal_bonus = 100  
-            return goal_bonus, True  
-
-        # ? Final reward calculation
+        # Final reward calculation
         reward = (
-            angle_improvement 
-            + turn_reward  
-            + forward_reward  
-            + misalignment_penalty  
-            + spinning_penalty  
+            dtg_reward + htg_reward + action_reward  
         )
 
         return reward, False   
@@ -360,7 +320,7 @@ class CrowdAvoidanceEnv(gym.Env):
 
         
 
-        return np.array([goal_distance, goal_angle, ax, ay, wx, wy, wz], dtype=np.float32)
+        return np.array([round(goal_distance, 3), goal_angle, ax, ay, wx, wy, wz], dtype=np.float32)
     
 
 
