@@ -1,0 +1,3 @@
+[console_scripts]
+view_gym = pybullet_sim.view_gym:main
+
