@@ -1,5 +1,5 @@
 import gymnasium as gym
-from pybullet_sim.crowd_gym import CrowdAvoidanceEnv
+from avoid_gym import CrowdAvoidanceEnv
 
 
 def main():
@@ -10,6 +10,7 @@ def main():
     while True:
         action = env.action_space.sample()  # Sample a random action
         observation, reward, done, _, _ = env.step(action)
+        print("Observation shape:", observation.shape)
         
         
         if done:
